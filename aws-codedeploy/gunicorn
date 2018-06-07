@@ -1,0 +1,62 @@
+#!/bin/bash
+
+# Init file for gunicorn
+#
+# chkconfig: 2345 84 16
+# description: gunicorn processes the deployments created by AWS CodeDeploy and installs \
+# the deployment artifacts on to this instance.
+
+### BEGIN INIT INFO
+# Provides:          gunicorn
+# Required-Start:    $all
+# Required-Stop:     $remote_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Gunicorn 'Green Unicorn' is a Python WSGI HTTP Server for UNIX
+# Description:       Gunicorn 'Green Unicorn' is a Python WSGI HTTP Server for UNIX. It's a pre-fork worker model. The Gunicorn server is broadly compatible with various web frameworks, simply implemented, light on server resources, and fairly speedy.
+### END INIT INFO
+
+# Source function library.
+. /etc/init.d/functions
+
+USER=nginx
+
+# Store this in a subdirectory with the right owner. gunicorn can't do the write-pid-then-drop-privs thing.
+install --owner $USER --mode 0755 --directory /var/run/gunicorn
+PIDFILE=/var/run/gunicorn/gunicorn.pid
+
+start() {
+        echo -n "Starting gunicorn: "
+        cd /var/www
+        daemon --check gunicorn --user $USER --pidfile $PIDFILE /usr/local/bin/gunicorn --daemon --pid $PIDFILE --bind 127.0.0.1:8000 run:app || return $?
+        touch /var/lock/subsys/gunicorn
+        return 0
+}
+
+stop() {
+        echo -n "Shutting down gunicorn: "
+        killproc -p $PIDFILE gunicorn || return $?
+        rm -f /var/lock/subsys/gunicorn
+        return 0
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    status)
+        status -p $PIDFILE gunicorn
+        ;;
+    restart|reload)
+        stop
+        start
+        ;;
+    *)
+        echo "Usage: gunicorn {start|stop|status|reload|restart}"
+        exit 1
+        ;;
+esac
+exit $?
