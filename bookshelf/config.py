@@ -47,7 +47,9 @@ class ProductionConfig(BaseConfig):
     DEBUG = False
     TESTING = False
     ENV = 'prod'
-    SQLALCHEMY_DATABASE_URI = 'sqlite://'
+    ssm = boto3.client('ssm', 'eu-west-1')
+    p = ssm.get_parameters(Names=['bookshelf-database-endpoint-hostname', 'bookshelf-database-endpoint-port'])
+    SQLALCHEMY_DATABASE_URI = 'mysql+pymysql://{}:{}@{}:{}/{}'.format('master', 'foobar42', p['Parameters'][0]['Value'], p['Parameters'][1]['Value'], 'bookshelf')
     SECRET_KEY = '8c0caeb1-6bb2-4d2d-b057-596b2dcab18e'
 
 

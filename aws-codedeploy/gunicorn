@@ -28,7 +28,7 @@ PIDFILE=/var/run/gunicorn/gunicorn.pid
 start() {
         echo -n "Starting gunicorn: "
         cd /var/www
-        daemon --check gunicorn --user $USER --pidfile $PIDFILE /usr/local/bin/gunicorn --daemon --pid $PIDFILE --bind 127.0.0.1:8000 run:app || return $?
+        daemon --check gunicorn --user $USER --pidfile $PIDFILE /usr/local/bin/gunicorn --daemon --pid $PIDFILE --bind 127.0.0.1:8000 --env FLASK_CONFIGURATION=prod run:app || return $?
         touch /var/lock/subsys/gunicorn
         return 0
 }
