@@ -23,12 +23,15 @@ USER=nginx
 
 # Store this in a subdirectory with the right owner. gunicorn can't do the write-pid-then-drop-privs thing.
 install --owner $USER --mode 0755 --directory /var/run/gunicorn
+install --owner $USER --mode 0755 --directory /var/log/gunicorn
+
 PIDFILE=/var/run/gunicorn/gunicorn.pid
+LOGFILE=/var/log/gunicorn/gunicorn.log
 
 start() {
         echo -n "Starting gunicorn: "
         cd /var/www
-        daemon --check gunicorn --user $USER --pidfile $PIDFILE /usr/local/bin/gunicorn --daemon --pid $PIDFILE --bind 127.0.0.1:8000 --env FLASK_CONFIGURATION=prod run:app || return $?
+        daemon --check gunicorn --user $USER --pidfile $PIDFILE /usr/local/bin/gunicorn --daemon --pid $PIDFILE --log-file $LOGFILE --bind 127.0.0.1:8000 --env FLASK_CONFIGURATION=prod run:app || return $?
         touch /var/lock/subsys/gunicorn
         return 0
 }
