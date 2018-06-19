@@ -1,0 +1,130 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Python Flask Demo with AWS Secrets Manager
+
+Parameters:
+  CommonStackName:
+    Description: Name of the "common" CloudFormation stack
+    Type: String
+    Default: BookshelfCommon
+  AMIID:
+    Description: The AMI for EC2 instances
+    Type: String
+    Default: ami-ca0135b3
+    AllowedPattern: 'ami-[0-9a-f]+'
+    ConstraintDescription: An AMI ID, such as ami-ca0135b3
+  KeyName:
+    Description: Name of the SSH key used to log in to EC2 instances
+    Type: String
+    Default: richardcloudsoft
+  WebTierInstanceType:
+    Description: Instance type to be used for web tier EC2 instances
+    Type: String
+    Default: t2.micro
+
+Resources:
+
+  BookshelfLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Type: application
+      Scheme: internet-facing
+      IpAddressType: ipv4  # or dualstack
+      SecurityGroups:
+        - {"Fn::ImportValue" : {"Fn::Sub" : "${CommonStackName}:WebTierSecurityGroup"}}
+      Subnets:
+        - {"Fn::ImportValue" : {"Fn::Sub" : "${CommonStackName}:BookshelfSubnetA"}}
+        - {"Fn::ImportValue" : {"Fn::Sub" : "${CommonStackName}:BookshelfSubnetB"}}
+
+  BookshelfLoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref BookshelfLoadBalancer
+      Port: 80
+      Protocol: HTTP 
+      DefaultActions: 
+        - Type: forward
+          TargetGroupArn: !Ref BookshelfLoadBalancerTargetGroup
+
+  BookshelfLoadBalancerTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: {"Fn::ImportValue" : {"Fn::Sub" : "${CommonStackName}:BookshelfVPC"}}
+      Protocol: HTTP
+      Port: 80
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: 80
+      HealthCheckPath: /main/authors/
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref AMIID
+        InstanceType: !Ref WebTierInstanceType
+        IamInstanceProfile:
+          Arn: {"Fn::ImportValue" : {"Fn::Sub" : "${CommonStackName}:BookshelfWebTierInstanceProfile"}}
+        KeyName: !Ref KeyName
+        NetworkInterfaces:
+          - AssociatePublicIpAddress: true
+            DeviceIndex: 0
+            Groups:
+              - {"Fn::ImportValue" : {"Fn::Sub" : "${CommonStackName}:WebTierSecurityGroup"}}
+              - {"Fn::ImportValue" : {"Fn::Sub" : "${CommonStackName}:AllowSSHSecurityGroup"}}
+              - {"Fn::ImportValue" : {"Fn::Sub" : "${CommonStackName}:DatabaseTierAccessSecurityGroup"}}
+            SubnetId: {"Fn::ImportValue" : {"Fn::Sub" : "${CommonStackName}:BookshelfSubnetA"}}
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeType: gp2
+              DeleteOnTermination: true
+              VolumeSize: 8
+        UserData:
+          Fn::Base64:
+            Fn::Join:
+              - ''
+              -
+                - |-
+                    #!/bin/bash -xe
+                    yum update -y --security
+                    yum install -y wget ruby
+                    wget -O/root/install https://aws-codedeploy-
+                - !Ref "AWS::Region"
+                - |
+                    .s3.amazonaws.com/latest/install
+                    chmod a+x /root/install
+                    /root/install auto
+
+  BookshelfASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt [ LaunchTemplate, LatestVersionNumber ]
+      MinSize: 1
+      MaxSize: 2
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      VPCZoneIdentifier:
+        - {"Fn::ImportValue" : {"Fn::Sub" : "${CommonStackName}:BookshelfSubnetA"}}
+        - {"Fn::ImportValue" : {"Fn::Sub" : "${CommonStackName}:BookshelfSubnetB"}}
+      TargetGroupARNs: [ !Ref BookshelfLoadBalancerTargetGroup ]
+
+  CodeDeployApplication:
+    Type: AWS::CodeDeploy::Application
+    Properties:
+      ComputePlatform: Server
+
+  CodeDeployDeploymentGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    Properties:
+      ApplicationName: !Ref CodeDeployApplication
+      Deployment:
+        Description: Deployment
+        Revision:
+          RevisionType: S3
+          S3Location:
+            Bucket: downer-codedeploy
+            BundleType: tgz
+            Key: flask-bookshelf.tar.gz
+      AutoScalingGroups: [ !Ref BookshelfASG ]
+      ServiceRoleArn: {"Fn::ImportValue" : {"Fn::Sub" : "${CommonStackName}:ServiceRoleForCodeDeploy"}}
