@@ -1,5 +1,6 @@
 import os
 import logging
+import boto3
 from flask_compress import Compress
 from flask_security import Security, SQLAlchemyUserDatastore
 from bookshelf.data.models import db, Role, User
