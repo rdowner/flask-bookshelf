@@ -55,6 +55,42 @@ Resources:
       HealthCheckPort: 80
       HealthCheckPath: /main/authors/
 
+  # would prefer to use a launch template but CodeDeploy+BlueGreen+LaunchTemplate = INVALID_ERROR
+  # see https://forums.aws.amazon.com/thread.jspa?threadID=283802&tstart=0
+  LaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: !Ref AMIID
+      InstanceType: !Ref WebTierInstanceType
+      IamInstanceProfile: {"Fn::ImportValue" : {"Fn::Sub" : "${CommonStackName}:BookshelfWebTierInstanceProfile"}}
+      KeyName: !Ref KeyName
+      AssociatePublicIpAddress: true
+      SecurityGroups:
+        - {"Fn::ImportValue" : {"Fn::Sub" : "${CommonStackName}:WebTierSecurityGroup"}}
+        - {"Fn::ImportValue" : {"Fn::Sub" : "${CommonStackName}:AllowSSHSecurityGroup"}}
+        - {"Fn::ImportValue" : {"Fn::Sub" : "${CommonStackName}:DatabaseTierAccessSecurityGroup"}}
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeType: gp2
+            DeleteOnTermination: true
+            VolumeSize: 8
+      UserData:
+        Fn::Base64:
+          Fn::Join:
+            - ''
+            -
+              - |-
+                  #!/bin/bash -xe
+                  yum update -y --security
+                  yum install -y wget ruby
+                  wget -O/root/install https://aws-codedeploy-
+              - !Ref "AWS::Region"
+              - |
+                  .s3.amazonaws.com/latest/install
+                  chmod a+x /root/install
+                  /root/install auto
+
   LaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
     Properties:
@@ -97,9 +133,11 @@ Resources:
   BookshelfASG:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
-      LaunchTemplate:
-        LaunchTemplateId: !Ref LaunchTemplate
-        Version: !GetAtt [ LaunchTemplate, LatestVersionNumber ]
+      LaunchConfigurationName: !Ref LaunchConfiguration
+      # see comment on LaunchConfiguration above
+      #LaunchTemplate:
+      #  LaunchTemplateId: !Ref LaunchTemplate
+      #  Version: !GetAtt [ LaunchTemplate, LatestVersionNumber ]
       MinSize: 1
       MaxSize: 2
       HealthCheckType: ELB
