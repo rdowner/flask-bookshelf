@@ -20,6 +20,10 @@ Parameters:
     Description: Instance type to be used for web tier EC2 instances
     Type: String
     Default: t2.micro
+  SecretArn:
+    Description: ARN of the secret in Secrets Manager
+    Type: String
+    Default: t2.micro
 
 Resources:
 
@@ -146,6 +150,10 @@ Resources:
         - {"Fn::ImportValue" : {"Fn::Sub" : "${CommonStackName}:BookshelfSubnetA"}}
         - {"Fn::ImportValue" : {"Fn::Sub" : "${CommonStackName}:BookshelfSubnetB"}}
       TargetGroupARNs: [ !Ref BookshelfLoadBalancerTargetGroup ]
+      Tags:
+        - Key: SecretArn
+          Value: !Ref SecretArn
+          PropagateAtLaunch: true
 
   CodeDeployApplication:
     Type: AWS::CodeDeploy::Application

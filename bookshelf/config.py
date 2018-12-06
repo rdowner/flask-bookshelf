@@ -1,9 +1,29 @@
 import os
 import logging
+import json
 import boto3
+from ec2_metadata import ec2_metadata
 from flask_compress import Compress
 from flask_security import Security, SQLAlchemyUserDatastore
 from bookshelf.data.models import db, Role, User
+
+
+def get_secret():
+    secret_name = "arn:aws:secretsmanager:eu-west-1:221919672684:secret:bookshelf-db-master-nZhecc"
+    endpoint_url = "https://secretsmanager.eu-west-1.amazonaws.com"
+
+    session = boto3.session.Session()
+    client = session.client(
+        service_name='secretsmanager',
+        region_name=ec2_metadata.region,
+        endpoint_url=endpoint_url
+    )
+
+    get_secret_value_response = client.get_secret_value(
+        SecretId=secret_name
+    )
+
+    return json.loads(get_secret_value_response['SecretString'])
 
 
 class BaseConfig(object):
@@ -48,9 +68,9 @@ class ProductionConfig(BaseConfig):
     DEBUG = False
     TESTING = False
     ENV = 'prod'
-    ssm = boto3.client('ssm', 'eu-west-1')
-    p = ssm.get_parameters(Names=['bookshelf-database-endpoint-hostname', 'bookshelf-database-endpoint-port'])
-    SQLALCHEMY_DATABASE_URI = 'mysql+pymysql://{}:{}@{}:{}/{}'.format('master', 'fooBar42', p['Parameters'][0]['Value'], p['Parameters'][1]['Value'], 'bookshelf')
+    secret = get_secret()
+    SQLALCHEMY_DATABASE_URI = 'mysql+pymysql://{}:{}@{}:{}/{}'.format(secret['username'], secret['password'],
+                                                                      secret['host'], secret['port'], secret['dbname'])
     SECRET_KEY = '8c0caeb1-6bb2-4d2d-b057-596b2dcab18e'
 
 
@@ -63,6 +83,13 @@ config = {
 
 
 def configure_app(app):
+    # Query AWS for our tags
+    ec2 = boto3.client('ec2', ec2_metadata.region)
+    instance = ec2.Instance(ec2_metadata.instance_id)
+    tags = dict()
+    for t in instance.tags:
+        tags[t['Key']] = t['Value']
+    print(tags)
     config_name = os.getenv('FLASK_CONFIGURATION', 'default')
     app.config.from_object(config[config_name])
     app.config.from_pyfile('config.cfg', silent=True)

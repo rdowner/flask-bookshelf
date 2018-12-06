@@ -32,8 +32,8 @@ Parameters:
     Description: Password of the "master" user of the database
     Type: String
     Default: fooBar42
-  AllowSSHFromCIDR:
-    Description: CIDR from which SSH clients can be made to web tier EC2 instances
+  ManagementCIDR:
+    Description: CIDR from which SSH clients can be made to web tier EC2 instances, and database clients can connect to the database
     Type: String
     Default: 0.0.0.0/0
     AllowedPattern: '((\d{1,3})\.){3}\d{1,3}/\d{1,2}'
@@ -65,11 +65,11 @@ Outputs:
     Value: !Ref WebTierSecurityGroup
     Export:
       Name: !Join [ ":", [ !Ref "AWS::StackName", WebTierSecurityGroup ] ]
-  AllowSSHSecurityGroup:
+  ManagementSecurityGroup:
     Description: The ID of the security group that permits SSH access
-    Value: !Ref AllowSSHSecurityGroup
+    Value: !Ref ManagementSecurityGroup
     Export:
-      Name: !Join [ ":", [ !Ref "AWS::StackName", AllowSSHSecurityGroup ] ]
+      Name: !Join [ ":", [ !Ref "AWS::StackName", ManagementSecurityGroup ] ]
   BookshelfWebTierInstanceProfile:
     Description: The ARN of the instance profile that is applied to EC2 web tier instances
     Value: !GetAtt [ BookshelfWebTierInstanceProfile, Arn ]
@@ -162,7 +162,7 @@ Resources:
         ToPort: 80
         CidrIp: 0.0.0.0/0
 
-  AllowSSHSecurityGroup:
+  ManagementSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Security rules for the web tier
@@ -171,7 +171,11 @@ Resources:
       - IpProtocol: tcp
         FromPort: 22
         ToPort: 22
-        CidrIp: !Ref AllowSSHFromCIDR
+        CidrIp: !Ref ManagementCIDR
+      - IpProtocol: tcp
+        FromPort: 3306
+        ToPort: 3306
+        CidrIp: !Ref ManagementCIDR
 
   DatabaseTierAccessSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -203,31 +207,19 @@ Resources:
       AvailabilityZone: !Join [ '', [ !Ref 'AWS::Region', 'a' ] ]
       DBInstanceClass: !Ref DatabaseTierInstanceType
       Engine: mysql
-      EngineVersion: 5.6.39
+      EngineVersion: 5.7.21
+      AllowMajorVersionUpgrade: true
       MasterUsername: !Ref DatabaseMasterUsername
       MasterUserPassword: !Ref DatabaseMasterPassword
       StorageType: gp2
       AllocatedStorage: 20
 
-      VPCSecurityGroups: [ !Ref DatabaseTierSecurityGroup ]
+      VPCSecurityGroups:
+        - !Ref DatabaseTierSecurityGroup
+        - !Ref ManagementSecurityGroup
+      PubliclyAccessible: true
       DBSubnetGroupName: !Ref DBSubnetGroup
       DBName: bookshelf
-
-  DatabaseEndpointAddressSSMParameter:
-    Type: AWS::SSM::Parameter
-    Properties:
-      Name: bookshelf-database-endpoint-hostname
-      Type: String
-      Value: !GetAtt [ Database, Endpoint.Address ]
-      Description: Hostname part of the bookshelf RDS instance endpoint
-
-  DatabaseEndpointPortSSMParameter:
-    Type: AWS::SSM::Parameter
-    Properties:
-      Name: bookshelf-database-endpoint-port
-      Type: String
-      Value: !GetAtt [ Database, Endpoint.Port ]
-      Description: Port number part of the bookshelf RDS instance endpoint
 
   BookshelfWebTierInstanceProfile:
     Type: AWS::IAM::InstanceProfile
